@@ -12,5 +12,4 @@ auria-core = { path = "../auria-core", version = "0.1.0"}
 sha2 = "0.10"
 sha3 = "0.10"
 blake3 = "1.5"
-ed25519-dalek = { version = "2.0", features = ["rand_core"] }
 hex = "0.4"
