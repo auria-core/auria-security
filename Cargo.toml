@@ -1,0 +1,16 @@
+[package]
+name = "auria-security"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/auria-core/auria-runtime"
+authors = ["AURIA Team <auria@dust.llc>"]
+description = "AURIA Runtime Core - Cryptographic operations"
+
+[dependencies]
+auria-core = { path = "../auria-core", version = "0.1.0"}
+sha2 = "0.10"
+sha3 = "0.10"
+blake3 = "1.5"
+ed25519-dalek = { version = "2.0", features = ["rand_core"] }
+hex = "0.4"
