@@ -1,3 +1,10 @@
+// File: lib.rs - This file is part of AURIA
+// Copyright (c) 2026 AURIA Developers and Contributors
+// Description:
+//     Cryptographic operations for AURIA Runtime Core.
+//     Provides functions for shard integrity verification using BLAKE3,
+//     hash computation, and signature verification.
+//
 use auria_core::{AuriaResult, Hash, PublicKey, Shard, Signature};
 
 pub fn verify_shard_integrity(shard: &Shard) -> AuriaResult<bool> {
