@@ -8,8 +8,31 @@ use rand::Rng;
 use rand::rngs::OsRng;
 use sha3::{Digest, Keccak256, Keccak512};
 use blake3;
-use ed25519_dalek::{Signer, Verifier, Keypair, PublicKey as EdPublicKey, Signature as EdSignature};
+use ed25519_dalek::ed25519::{Keypair, PublicKey as EdPublicKey, Signature as EdSignature, SecretKey};
+use ed25519_dalek::signature::{Signer, Verifier};
 use std::convert::TryInto;
+use thiserror::Error;
+use serde::{Serialize, Deserialize};
+use serde::de::Error;
+
+// Re-export types for compatibility with auria-core
+use auria_core::shard::{PublicKey as CorePublicKey, Signature as CoreSignature};
+
+#[derive(Debug, Error)]
+pub enum SecurityError {
+    #[error("Invalid public key")]
+    InvalidPublicKey,
+    #[error("Signature verification failed")]
+    SignatureVerificationFailed,
+    #[error("Invalid private key")]
+    InvalidPrivateKey,
+    #[error("Hash verification failed")]
+    HashVerificationFailed,
+    #[error("Key management error: {0}")]
+    KeyManagementError(String),
+}
+
+pub type SecurityResult<T> = Result<T, SecurityError>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Hash(pub [u8; 32]);
@@ -56,8 +79,32 @@ impl std::fmt::Display for Hash {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature(pub [u8; 64]);
+
+impl serde::Serialize for Signature {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_bytes(&self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Signature {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let vec = Vec::<u8>::deserialize(deserializer)?;
+        if vec.len() != 64 {
+            return Err(D::Error::custom(format!("signature must be 64 bytes, got {}", vec.len())));
+        }
+        let mut arr = [0u8; 64];
+        arr.copy_from_slice(&vec);
+        Ok(Signature(arr))
+    }
+}
 
 impl Signature {
     pub fn new() -> Self {
@@ -166,22 +213,22 @@ pub struct KeyPair {
 
 impl KeyPair {
     pub fn new() -> SecurityResult<Self> {
-        let keypair = ed25519_dalek::Keypair::generate(&mut OsRng::default());
+        let keypair = Keypair::generate(&mut OsRng::default());
         let public = PublicKey(keypair.public.as_bytes().try_into().unwrap());
         let private = PrivateKey(keypair.secret.as_bytes().try_into().unwrap());
         Ok(Self { public, private })
     }
 
-    pub fn from_keypair(keypair: ed25519_dalek::Keypair) -> Self {
+    pub fn from_keypair(keypair: Keypair) -> Self {
         let public = PublicKey(keypair.public.as_bytes().try_into().unwrap());
         let private = PrivateKey(keypair.secret.as_bytes().try_into().unwrap());
         Self { public, private }
     }
 
-    pub fn to_keypair(&self) -> ed25519_dalek::Keypair {
-        let public = ed25519_dalek::PublicKey::from_bytes(&self.public.0).unwrap();
-        let private = ed25519_dalek::SecretKey::from_bytes(&self.private.0).unwrap();
-        ed25519_dalek::Keypair { public, secret: private }
+    pub fn to_keypair(&self) -> Keypair {
+        let public = PublicKey::from_bytes(&self.public.0).unwrap();
+        let private = SecretKey::from_bytes(&self.private.0).unwrap();
+        Keypair { public, secret: private }
     }
 
     pub fn sign(&self, message: &[u8]) -> SecurityResult<Signature> {
@@ -191,9 +238,9 @@ impl KeyPair {
     }
 
     pub fn verify(&self, message: &[u8], signature: &Signature) -> SecurityResult<bool> {
-        let public = ed25519_dalek::PublicKey::from_bytes(&self.public.0)
+        let public = PublicKey::from_bytes(&self.public.0)
             .map_err(|_| SecurityError::InvalidPublicKey)?;
-        let ed_signature = ed25519_dalek::Signature::from_bytes(&signature.0)
+        let ed_signature = Signature::from_bytes(&signature.0)
             .map_err(|_| SecurityError::SignatureVerificationFailed)?;
         Ok(public.verify(message, &ed_signature).is_ok())
     }
@@ -233,29 +280,45 @@ pub fn generate_keypair() -> SecurityResult<KeyPair> {
 }
 
 pub fn sign_message(private_key: &PrivateKey, message: &[u8]) -> SecurityResult<Signature> {
-    let keypair = ed25519_dalek::Keypair::from_secret(ed25519_dalek::SecretKey::from_bytes(&private_key.0)
+    let keypair = Keypair::from_secret(SecretKey::from_bytes(&private_key.0)
         .map_err(|_| SecurityError::InvalidPrivateKey)?);
     let signature = keypair.sign(message);
     Ok(Signature(signature.to_bytes()))
 }
 
 pub fn verify_signature(public_key: &PublicKey, message: &[u8], signature: &Signature) -> SecurityResult<bool> {
-    let public = ed25519_dalek::PublicKey::from_bytes(&public_key.0)
+    let public = PublicKey::from_bytes(&public_key.0)
         .map_err(|_| SecurityError::InvalidPublicKey)?;
-    let ed_signature = ed25519_dalek::Signature::from_bytes(&signature.0)
+    let ed_signature = Signature::from_bytes(&signature.0)
         .map_err(|_| SecurityError::SignatureVerificationFailed)?;
     Ok(public.verify(message, &ed_signature).is_ok())
 }
 
+// Conversion helpers for auria-core types
+pub fn public_key_from_core(key: &CorePublicKey) -> PublicKey {
+    PublicKey(key.0)
+}
+
+pub fn signature_from_core(sig: &CoreSignature) -> Signature {
+    Signature(sig.0)
+}
+
+pub fn verify_signature_core(
+    public_key: &CorePublicKey,
+    message: &[u8],
+    signature: &CoreSignature,
+) -> SecurityResult<bool> {
+    let pk = public_key_from_core(public_key);
+    let sig = signature_from_core(signature);
+    verify_signature(&pk, message, &sig)
+}
+
 pub fn derive_key_from_password(password: &str, salt: &[u8]) -> SecurityResult<PrivateKey> {
-    use scrypt::Scrypt;
+    use scrypt::scrypt;
     let params = scrypt::ScryptParams::new(14, 8, 1);
     let mut key = [0u8; 32];
-    Scrypt::default()
-        .params(params)
-        .salt(salt)
-        .hash(password.as_bytes(), &mut key)
-        .map_err(|_| SecurityError::KeyManagementError("SCrypt derivation failed".to_string()))?;
+    scrypt(password.as_bytes(), salt, &params, &mut key)
+        .map_err(|_| SecurityError::KeyManagementError("scrypt derivation failed".to_string()))?;
     Ok(PrivateKey(key))
 }
 
