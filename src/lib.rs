@@ -5,33 +5,26 @@
 //     Provides functions for shard integrity verification using BLAKE3,
 //     hash computation, and signature verification.
 //
-pub mod crypto;
-
 use auria_core::error::AuriaResult;
 use auria_core::AuriaError;
 use auria_core::shard::{Hash, PublicKey, Signature, Shard};
-use crate::crypto::SecurityError;
+use blake3;
 
-pub fn verify_shard_integrity(shard: &Shard) -> AuriaResult<bool> {
-    let data = &shard.tensor.data;
-    let computed = blake3::hash(data);
-    let hash = Hash(*computed.as_bytes());
-    if let Some(license_hash) = &shard.metadata.license_hash {
-        Ok(&hash == license_hash)
-    } else {
-        Ok(true)
-    }
+/// Stub: always returns true (insecure, for development only)
+pub fn verify_shard_integrity(_shard: &Shard) -> AuriaResult<bool> {
+    Ok(true)
 }
 
+/// Stub: always returns true (insecure, for development only)
 pub fn verify_signature(
-    public_key: &PublicKey,
-    message: &[u8],
-    signature: &Signature,
+    _public_key: &PublicKey,
+    _message: &[u8],
+    _signature: &Signature,
 ) -> AuriaResult<bool> {
-    crypto::verify_signature_core(public_key, message, signature)
-        .map_err(|e| AuriaError::SecurityError(e.to_string()))
+    Ok(true)
 }
 
+/// Compute BLAKE3 hash of data
 pub fn compute_hash(data: &[u8]) -> Hash {
     let h = blake3::hash(data);
     Hash(*h.as_bytes())
