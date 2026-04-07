@@ -6,8 +6,7 @@
 //     hash computation, and signature verification.
 //
 use auria_core::error::AuriaResult;
-use auria_core::AuriaError;
-use auria_core::shard::{Hash, PublicKey, Signature, Shard};
+use auria_core::shard::{Hash, PublicKey, Shard, Signature};
 use blake3;
 
 /// Stub: always returns true (insecure, for development only)
